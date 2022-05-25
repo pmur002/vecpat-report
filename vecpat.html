@@ -1,0 +1,904 @@
+<html>
+  <head>
+<style type="text/css">
+.inline {
+  background-color: #f7f7f7;
+  border:solid 1px #B0B0B0;
+}
+.error {
+	font-weight: bold;
+	color: #FF0000;
+}
+.warning {
+	font-weight: bold;
+}
+.message {
+	font-style: italic;
+}
+.source, .output, .warning, .error, .message {
+	padding: 0 1em;
+  border:solid 1px #F7F7F7;
+}
+.source {
+  background-color: #f5f5f5;
+}
+.left {
+  text-align: left;
+}
+.right {
+  text-align: right;
+}
+.center {
+  text-align: center;
+}
+.hl.num {
+  color: #AF0F91;
+}
+.hl.str {
+  color: #317ECC;
+}
+.hl.com {
+  color: #AD95AF;
+  font-style: italic;
+}
+.hl.opt {
+  color: #000000;
+}
+.hl.std {
+  color: #585858;
+}
+.hl.kwa {
+  color: #295F94;
+  font-weight: bold;
+}
+.hl.kwb {
+  color: #B05A65;
+}
+.hl.kwc {
+  color: #55aa55;
+}
+.hl.kwd {
+  color: #BC5A65;
+  font-weight: bold;
+}
+</style>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <style type="text/css">
+    @media print {
+      body { }
+      p.img { text-align: center; page-break-inside: avoid }
+      img.CC { display: inline }
+    }
+    @media screen {
+      body { max-width: 800px; margin: auto }
+      p.img { text-align: center }
+      img.CC { display: inline }
+    }
+    p.date {
+      font-size: smaller;
+      margin: 0;
+    }
+    p.versionHistory {
+      color: gray
+    }
+    p.versionHistory a {
+      color: gray
+    }
+    p.ref {
+      text-indent: -2em;
+      padding-left: 2em;
+    }
+    p.fig {
+      text-align: left;
+    }
+    p.fig img, img.plot {
+      box-shadow: 10px 10px 20px;
+      margin-top: 10px;
+      margin-bottom: 20px;      
+    }
+  </style>
+  </head>
+  <body>
+    <h1>Vectorised Pattern Fills in R Graphics</h1>
+    <p>
+      <span style="font-style: italic">by Paul Murrell</span>
+      <a href="http://orcid.org">
+        <img alt="" src="https://www.stat.auckland.ac.nz/~paul/ORCID/ORCiD.png" style="width: 16px; height: 16px; vertical-align: middle">
+      </a>
+      <span style="font-family: mono; font-size: small">
+        <a href="http://orcid.org/0000-0002-3224-8858">http://orcid.org/0000-0002-3224-8858</a>
+      </span>
+    </p>
+    <p class="date">
+    Version 1:  
+Wednesday 25 May 2022
+  </p>
+
+
+    <hr>
+    <p><a rel="license" href="http://creativecommons.org/licenses/by/4.0/"><img class="CC" alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by/4.0/88x31.png"></a><br><span xmlns:dct="http://purl.org/dc/terms/" property="dct:title">This document</span>
+    by <span xmlns:cc="http://creativecommons.org/ns#" property="cc:attributionName">Paul
+    Murrell</span> is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by/4.0/">Creative
+    Commons Attribution 4.0 International License</a>.
+  </p>
+    <hr>
+    <p>
+    This document describes an extension of the support for 
+    pattern fills in R graphics (linear gradients, radial gradients, and
+    tiling patterns) to 
+    allow multiple pattern fills to be specified at once when drawing. 
+  </p>
+    <p>
+    These features are available in R version 4.2.0.
+  </p>
+    <p>
+    Gradient fills and pattern fills are currently only available on the
+    <code>pdf()</code> and Cairo-based graphics devices, of the core
+    graphics devices provided by the 'graphics' package, plus the
+    graphics devices provided by the 'ragg' package (<a href="#pkg:ragg">Pedersen and Shemanarev, 2021</a>)
+    and the 'svglite' package (<a href="#pkg:svglite">Wickham et al., 2022</a>).
+  </p>
+    <div>
+      <h2>Table of Contents:</h2>
+      <ul style="list-style: none">
+        <li>
+          <a href="#intro">1. Introduction</a>
+        </li>
+        <li>
+          <a href="#vecpat">2. Vectorised pattern fills</a>
+        </li>
+        <li>
+          <a href="#points">3. Data symbols with pattern fills</a>
+        </li>
+        <li>
+          <a href="#viewports">4. Pattern fills on viewports</a>
+        </li>
+        <li>
+          <a href="#gTrees">5. Pattern fills on gTrees</a>
+        </li>
+        <li>
+          <a href="#groups">6. Groups and paths with pattern fills</a>
+        </li>
+        <li>
+          <a href="#discussion">7. Summary</a>
+        </li>
+        <li>
+          <a href="#requirements">8. Technical requirements</a>
+        </li>
+        <li>
+          <a href="#Resources">9. Resources</a>
+        </li>
+        <li>
+          <a href="#references">10. References</a>
+        </li>
+      </ul>
+    </div>
+    <h2>
+      <a name="intro">1. Introduction</a>
+    </h2>
+    <p>
+    Changes to the graphics engine in R 4.1.0 added support for
+    pattern fills, clipping paths, and masks 
+    (<a href="#murrell-definitions-2020">Murrell, 2020</a>).  
+    The patterns that are currently supported are linear
+    gradients, radial gradients, and tiling patterns.
+    The following example demonstrates the use of a linear gradient
+    to fill a rectangle.  In this case, we have a gradient from black
+    to white and back again several times.
+  </p>
+<div class="chunk" id="unnamed-chunk-3"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl std">colours</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;black&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;white&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;black&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;white&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;black&quot;</span><span class="hl std">)</span>
+<span class="hl std">gradient</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">linearGradient</span><span class="hl std">(colours)</span>
+<span class="hl kwd">grid.rect</span><span class="hl std">(</span><span class="hl kwc">width</span><span class="hl std">=</span><span class="hl num">.8</span><span class="hl std">,</span> <span class="hl kwc">height</span><span class="hl std">=</span><span class="hl num">.8</span><span class="hl std">,</span>
+          <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=gradient))</span>
+</pre></div>
+</div><div class="rimage default"><img src="figure/unnamed-chunk-3-1.png" title="plot of chunk unnamed-chunk-3" alt="plot of chunk unnamed-chunk-3" class="plot" /></div></div>
+    <p>
+    The expected behaviour is reasonably clear when drawing a single shape
+    like the single rectangle above;  the linear gradient is relative to
+    the dimensions of the rectangle (by default, from bottom-left to top-right).
+    However, it is possible
+    for a single call to <code>grid.rect()</code> to draw more than
+    one rectangle.  What should happen then?
+  </p>
+    <p>
+    What currently happens is shown below:  the linear gradient is relative
+    to a bounding box around all of the rectangles that are drawn
+    (as indicated by the green rectangle in the output below).
+  </p>
+<div class="chunk" id="multirect"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl kwd">grid.rect</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.4</span><span class="hl std">,</span> <span class="hl num">.7</span><span class="hl std">),</span> <span class="hl kwc">y</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.3</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">),</span> <span class="hl kwc">width</span><span class="hl std">=</span><span class="hl num">.2</span><span class="hl std">,</span> <span class="hl kwc">height</span><span class="hl std">=</span><span class="hl num">.4</span><span class="hl std">,</span>
+          <span class="hl kwc">just</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;left&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;bottom&quot;</span><span class="hl std">),</span>
+          <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=gradient))</span>
+</pre></div>
+</div></div>
+<div class="chunk" id="unnamed-chunk-4"><div class="rimage default"><img src="figure/unnamed-chunk-4-1.png" title="plot of chunk unnamed-chunk-4" alt="plot of chunk unnamed-chunk-4" class="plot" /></div></div>
+    <p>
+    This might be what we want to have happen, but there are 
+    other possible outcomes.  For example, we might want to fill each
+    individual rectangle separately with its own linear gradient.
+  </p>
+    <p>
+    This document describes an extension of the 'grid' support for 
+    pattern fills that allows for more control over the behaviour
+    of pattern fills when we are drawing more than one shape.
+  </p>
+    <p>
+    In brief, the changes are: 
+  </p>
+    <ol>
+      <li>
+      The <code>gpar</code> function will now accept a <em>list</em> of
+      patterns, e.g., 
+      <code>gpar(fill=list(linearGradient(), radialGradient())</code>,
+      so that we can specify a "vector" of patterns.
+    </li>
+      <li>
+      The functions that generate patterns now have a <code>group</code>
+      argument, e.g., <code>linearGradient(group = FALSE)</code>,
+      so that the pattern can be resolved relative to individual shapes
+      rather than the bounding box of all shapes.
+    </li>
+    </ol>
+    <h2>
+      <a name="vecpat">2. Vectorised pattern fills</a>
+    </h2>
+    <p>
+    The functions <code>linearGradient()</code>,
+    <code>radialGradient()</code>, and <code>pattern()</code>
+    all have a new argument called <code>group</code>.
+    By default, this argument is <code>TRUE</code>, which
+    means that the pattern fill is relative to the "group"
+    of shapes that are being drawn, as shown above.
+  </p>
+    <p>
+    However, if we specify <code>group=FALSE</code>, then
+    the pattern fill is drawn relative to each individual
+    shape that is being drawn.  For example, the code below
+    draws the same three rectangles as the previous example,
+    and uses the same linear gradient as before except that
+    <code>group=FALSE</code>.  Each rectangle is now filled
+    with the gradient relative to the individual rectangle
+    (as indicated by the green rectangles).
+  </p>
+<div class="chunk" id="multirectsolo"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl std">gradient2</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">linearGradient</span><span class="hl std">(colours,</span> <span class="hl kwc">group</span><span class="hl std">=</span><span class="hl num">FALSE</span><span class="hl std">)</span>
+<span class="hl kwd">grid.rect</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.4</span><span class="hl std">,</span> <span class="hl num">.7</span><span class="hl std">),</span> <span class="hl kwc">y</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.3</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">),</span> <span class="hl kwc">width</span><span class="hl std">=</span><span class="hl num">.2</span><span class="hl std">,</span> <span class="hl kwc">height</span><span class="hl std">=</span><span class="hl num">.4</span><span class="hl std">,</span>
+          <span class="hl kwc">just</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;left&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;bottom&quot;</span><span class="hl std">),</span>
+          <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=gradient2))</span>
+</pre></div>
+</div></div>
+<div class="chunk" id="unnamed-chunk-5"><div class="rimage default"><img src="figure/unnamed-chunk-5-1.png" title="plot of chunk unnamed-chunk-5" alt="plot of chunk unnamed-chunk-5" class="plot" /></div></div>
+    <p>
+    It is also now possible to specify a <em>list</em> of pattern fills
+    rather than just a single pattern fill.
+    For example, the following code defines a linear gradient,
+    a radial gradient, 
+    and a polka dot tiling pattern.
+  </p>
+<div class="chunk" id="unnamed-chunk-6"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl std">pat1</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">linearGradient</span><span class="hl std">(colours)</span>
+<span class="hl std">pat2</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">radialGradient</span><span class="hl std">(colours)</span>
+<span class="hl std">pat3</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">pattern</span><span class="hl std">(</span><span class="hl kwd">circleGrob</span><span class="hl std">(</span><span class="hl kwc">r</span><span class="hl std">=</span><span class="hl kwd">unit</span><span class="hl std">(</span><span class="hl num">1</span><span class="hl std">,</span> <span class="hl str">&quot;mm&quot;</span><span class="hl std">),</span> <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl str">&quot;black&quot;</span><span class="hl std">)),</span>
+                <span class="hl kwc">width</span><span class="hl std">=</span><span class="hl kwd">unit</span><span class="hl std">(</span><span class="hl num">3</span><span class="hl std">,</span> <span class="hl str">&quot;mm&quot;</span><span class="hl std">),</span> <span class="hl kwc">height</span><span class="hl std">=</span><span class="hl kwd">unit</span><span class="hl std">(</span><span class="hl num">3</span><span class="hl std">,</span> <span class="hl str">&quot;mm&quot;</span><span class="hl std">),</span>
+                <span class="hl kwc">extend</span><span class="hl std">=</span><span class="hl str">&quot;repeat&quot;</span><span class="hl std">)</span>
+</pre></div>
+</div></div>
+    <p>
+    The following code draws three rectangles and specifies
+    a list of three pattern fills. The result is that each rectangle uses a
+    different pattern fill.
+  </p>
+<div class="chunk" id="multipat"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl kwd">grid.rect</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.4</span><span class="hl std">,</span> <span class="hl num">.7</span><span class="hl std">),</span> <span class="hl kwc">y</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.3</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">),</span> <span class="hl kwc">width</span><span class="hl std">=</span><span class="hl num">.2</span><span class="hl std">,</span> <span class="hl kwc">height</span><span class="hl std">=</span><span class="hl num">.4</span><span class="hl std">,</span>
+          <span class="hl kwc">just</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;left&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;bottom&quot;</span><span class="hl std">),</span>
+          <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl kwd">list</span><span class="hl std">(pat1, pat2, pat3)))</span>
+</pre></div>
+</div></div>
+<div class="chunk" id="unnamed-chunk-7"><div class="rimage default"><img src="figure/unnamed-chunk-7-1.png" title="plot of chunk unnamed-chunk-7" alt="plot of chunk unnamed-chunk-7" class="plot" /></div></div>
+    <p>
+    However, the three pattern fills above are still each relative to the 
+    bounding box around all of the rectangles.  This is indicated 
+    by the green rectangle (for the linear gradient),
+    the green circle (for the radial gradient),
+    and the green dot (which is the basis of the tiling pattern).
+  </p>
+    <p>
+    We can
+    change this behaviour using the new <code>group</code> argument.
+    For example, the following code defines three new patterns, very
+    similar to the previous three patterns,
+    but with <code>group=FALSE</code>.
+  </p>
+<div class="chunk" id="unnamed-chunk-8"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl std">pat4</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">linearGradient</span><span class="hl std">(colours,</span> <span class="hl kwc">group</span><span class="hl std">=</span><span class="hl num">FALSE</span><span class="hl std">)</span>
+<span class="hl std">pat5</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">radialGradient</span><span class="hl std">(colours,</span> <span class="hl kwc">group</span><span class="hl std">=</span><span class="hl num">FALSE</span><span class="hl std">)</span>
+<span class="hl std">pat6</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">pattern</span><span class="hl std">(</span><span class="hl kwd">circleGrob</span><span class="hl std">(</span><span class="hl kwc">r</span><span class="hl std">=</span><span class="hl kwd">unit</span><span class="hl std">(</span><span class="hl num">1</span><span class="hl std">,</span> <span class="hl str">&quot;mm&quot;</span><span class="hl std">),</span> <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl str">&quot;black&quot;</span><span class="hl std">)),</span>
+                <span class="hl kwc">width</span><span class="hl std">=</span><span class="hl kwd">unit</span><span class="hl std">(</span><span class="hl num">3</span><span class="hl std">,</span> <span class="hl str">&quot;mm&quot;</span><span class="hl std">),</span> <span class="hl kwc">height</span><span class="hl std">=</span><span class="hl kwd">unit</span><span class="hl std">(</span><span class="hl num">3</span><span class="hl std">,</span> <span class="hl str">&quot;mm&quot;</span><span class="hl std">),</span>
+                <span class="hl kwc">extend</span><span class="hl std">=</span><span class="hl str">&quot;repeat&quot;</span><span class="hl std">,</span> <span class="hl kwc">group</span><span class="hl std">=</span><span class="hl num">FALSE</span><span class="hl std">)</span>
+</pre></div>
+</div></div>
+    <p>
+    The following code draws the same three rectangles as before,
+    specifies the list of three new patterns as the fill, and
+    the result is that each pattern is filled with its own
+    pattern and each pattern is relative to its individual 
+    rectangle (again indicated by a green rectangle, circle, and dot).
+  </p>
+<div class="chunk" id="multirectpat"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl kwd">grid.rect</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.4</span><span class="hl std">,</span> <span class="hl num">.7</span><span class="hl std">),</span> <span class="hl kwc">y</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.3</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">),</span> <span class="hl kwc">width</span><span class="hl std">=</span><span class="hl num">.2</span><span class="hl std">,</span> <span class="hl kwc">height</span><span class="hl std">=</span><span class="hl num">.4</span><span class="hl std">,</span>
+          <span class="hl kwc">just</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;left&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;bottom&quot;</span><span class="hl std">),</span>
+          <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl kwd">list</span><span class="hl std">(pat4, pat5, pat6)))</span>
+</pre></div>
+</div></div>
+<div class="chunk" id="unnamed-chunk-9"><div class="rimage default"><img src="figure/unnamed-chunk-9-1.png" title="plot of chunk unnamed-chunk-9" alt="plot of chunk unnamed-chunk-9" class="plot" /></div></div>
+    <p>
+    It is also possible to specify a list of patterns, some of which
+    are "grouped" and some of which are not.  The following code
+    demonstrates this by drawing three rectangles
+    with a linear gradient (not grouped),
+    a radial gradient (grouped), and a tiling pattern (not grouped).
+    The linear gradient is relative to the first rectangle (bottom-left),
+    the radial gradient is relative to the bounding box of all three
+    rectangles, and the tiling pattern is relative to the third rectangle
+    (top-right). 
+ </p>
+<div class="chunk" id="mixedrectpat"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl kwd">grid.rect</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.4</span><span class="hl std">,</span> <span class="hl num">.7</span><span class="hl std">),</span> <span class="hl kwc">y</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.3</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">),</span> <span class="hl kwc">width</span><span class="hl std">=</span><span class="hl num">.2</span><span class="hl std">,</span> <span class="hl kwc">height</span><span class="hl std">=</span><span class="hl num">.4</span><span class="hl std">,</span>
+          <span class="hl kwc">just</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;left&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;bottom&quot;</span><span class="hl std">),</span>
+          <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl kwd">list</span><span class="hl std">(pat4, pat2, pat6)))</span>
+</pre></div>
+</div></div>
+<div class="chunk" id="unnamed-chunk-10"><div class="rimage default"><img src="figure/unnamed-chunk-10-1.png" title="plot of chunk unnamed-chunk-10" alt="plot of chunk unnamed-chunk-10" class="plot" /></div></div>
+    <p>
+    In summary, it is now possible to specify a "vector" of 
+    pattern fills, just like being able to specify a vector
+    of fill colours, or line widths, or font sizes.      
+    Only as many patterns are used as there are shapes to fill
+    (the remainder are ignored) and 
+    patterns are recycled if necessary.
+    Furthermore, when we draw a grob that produces more than
+    one shape, the new <code>group</code> argument allows the 
+    pattern fills to be resolved relative to individual shapes
+    rather than an overall bounding box.
+  </p>
+    <h2>
+      <a name="points">3. Data symbols with pattern fills</a>
+    </h2>
+    <p>
+    Another improvement to the 'grid' support of pattern fills
+    is the ability to fill data symbols, as drawn by <code>grid.points()</code>
+    (this was not possible in R 4.1.0).
+    If we combine this with the ability to fill individual shapes, we can
+    fill individual data symbols with pattern fills.
+    For example, the following code defines a radial gradient
+    (with <code>group=FALSE</code>)
+    and then fills the data symbols on a 'ggplot2' plot 
+    (<a href="#pkg:ggplot2">Wickham, 2016</a>)
+    with that gradient.  The 'ggplot2' package does not yet have
+    an interface for pattern fills, but the 'gggrid' package 
+    (<a href="#pkg:gggrid">Murrell, 2022</a>) 
+    allows us to combine raw 'grid' output with the 'ggplot2' plot.
+  </p>
+<div class="chunk" id="unnamed-chunk-11"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl kwd">library</span><span class="hl std">(gggrid)</span>
+</pre></div>
+</div></div>
+<div class="chunk" id="unnamed-chunk-12"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl std">gradient</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">radialGradient</span><span class="hl std">(</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;white&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;black&quot;</span><span class="hl std">),</span> <span class="hl kwc">cx1</span><span class="hl std">=</span><span class="hl num">.7</span><span class="hl std">,</span> <span class="hl kwc">cy1</span><span class="hl std">=</span><span class="hl num">.7</span><span class="hl std">,</span> <span class="hl kwc">group</span><span class="hl std">=</span><span class="hl num">FALSE</span><span class="hl std">)</span>
+<span class="hl kwd">ggplot</span><span class="hl std">(mtcars,</span> <span class="hl kwd">aes</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=disp,</span> <span class="hl kwc">y</span><span class="hl std">=mpg))</span> <span class="hl opt">+</span>
+    <span class="hl kwd">grid_panel</span><span class="hl std">(</span><span class="hl kwa">function</span><span class="hl std">(</span><span class="hl kwc">data</span><span class="hl std">,</span> <span class="hl kwc">coords</span><span class="hl std">) {</span>
+                   <span class="hl kwd">pointsGrob</span><span class="hl std">(coords</span><span class="hl opt">$</span><span class="hl std">x, coords</span><span class="hl opt">$</span><span class="hl std">y,</span> <span class="hl kwc">pch</span><span class="hl std">=</span><span class="hl num">21</span><span class="hl std">,</span>
+                              <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=gradient,</span> <span class="hl kwc">col</span><span class="hl std">=</span><span class="hl num">NA</span><span class="hl std">))</span>
+               <span class="hl std">})</span>
+</pre></div>
+</div><div class="rimage default"><img src="figure/unnamed-chunk-12-1.png" title="plot of chunk unnamed-chunk-12" alt="plot of chunk unnamed-chunk-12" class="plot" /></div></div>
+    <p>
+    In the example above, we defined a single radial gradient
+    and recycled that gradient across multiple data symbols.
+    The next example generates a separate gradient for each
+    data symbol based on a categorical variable (and a colour
+    that is selected by 'ggplot2').  This shows that it can be
+    easy to generate a list of pattern fills with functions
+    like <code>lapply()</code>.  This example also uses 'gggrid'
+    to draw points with gradients in the legend.
+  </p>
+<div class="chunk" id="unnamed-chunk-13"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl std">gradientPoints</span> <span class="hl kwb">&lt;-</span> <span class="hl kwa">function</span><span class="hl std">(</span><span class="hl kwc">data</span><span class="hl std">,</span> <span class="hl kwc">coords</span><span class="hl std">) {</span>
+    <span class="hl std">gradients</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">lapply</span><span class="hl std">(data</span><span class="hl opt">$</span><span class="hl std">colour,</span>
+                        <span class="hl kwa">function</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">) {</span>
+                            <span class="hl kwd">radialGradient</span><span class="hl std">(</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;white&quot;</span><span class="hl std">, x),</span>
+                                           <span class="hl kwc">cx1</span><span class="hl std">=</span><span class="hl num">.7</span><span class="hl std">,</span> <span class="hl kwc">cy1</span><span class="hl std">=</span><span class="hl num">.7</span><span class="hl std">,</span>
+                                           <span class="hl kwc">group</span><span class="hl std">=</span><span class="hl num">FALSE</span><span class="hl std">)</span>
+                            <span class="hl std">})</span>
+    <span class="hl kwd">pointsGrob</span><span class="hl std">(coords</span><span class="hl opt">$</span><span class="hl std">x, coords</span><span class="hl opt">$</span><span class="hl std">y,</span> <span class="hl kwc">pch</span><span class="hl std">=</span><span class="hl num">21</span><span class="hl std">,</span>
+               <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=gradients,</span> <span class="hl kwc">col</span><span class="hl std">=</span><span class="hl num">NA</span><span class="hl std">))</span>
+<span class="hl std">}</span>
+<span class="hl std">gradientKey</span> <span class="hl kwb">&lt;-</span>  <span class="hl kwa">function</span><span class="hl std">(</span><span class="hl kwc">data</span><span class="hl std">,</span> <span class="hl kwc">...</span><span class="hl std">) {</span>
+    <span class="hl std">gradient</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">radialGradient</span><span class="hl std">(</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;white&quot;</span><span class="hl std">, data</span><span class="hl opt">$</span><span class="hl std">colour),</span> <span class="hl kwc">cx1</span><span class="hl std">=</span><span class="hl num">.7</span><span class="hl std">,</span> <span class="hl kwc">cy1</span><span class="hl std">=</span><span class="hl num">.7</span><span class="hl std">,</span>
+                               <span class="hl kwc">group</span><span class="hl std">=</span><span class="hl num">FALSE</span><span class="hl std">)</span>
+    <span class="hl kwd">pointsGrob</span><span class="hl std">(</span><span class="hl num">.5</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">,</span> <span class="hl kwc">pch</span><span class="hl std">=</span><span class="hl num">21</span><span class="hl std">,</span>
+               <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=gradient,</span> <span class="hl kwc">col</span><span class="hl std">=</span><span class="hl num">NA</span><span class="hl std">))</span>
+<span class="hl std">}</span>
+<span class="hl std">mtcars</span><span class="hl opt">$</span><span class="hl std">am</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">as.factor</span><span class="hl std">(mtcars</span><span class="hl opt">$</span><span class="hl std">am)</span>
+<span class="hl kwd">ggplot</span><span class="hl std">(mtcars)</span> <span class="hl opt">+</span>
+    <span class="hl kwd">grid_panel</span><span class="hl std">(gradientPoints,</span>
+               <span class="hl kwc">mapping</span><span class="hl std">=</span><span class="hl kwd">aes</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=disp,</span> <span class="hl kwc">y</span><span class="hl std">=mpg,</span> <span class="hl kwc">colour</span><span class="hl std">=am),</span>
+               <span class="hl kwc">key_glyph</span><span class="hl std">=gradientKey,</span> <span class="hl kwc">show.legend</span><span class="hl std">=</span><span class="hl num">TRUE</span><span class="hl std">)</span>
+</pre></div>
+</div><div class="rimage default"><img src="figure/unnamed-chunk-13-1.png" title="plot of chunk unnamed-chunk-13" alt="plot of chunk unnamed-chunk-13" class="plot" /></div></div>
+    <h2>
+      <a name="viewports">4. Pattern fills on viewports</a>
+    </h2>
+    <p>
+    As well as being able to specify a pattern fill on a grob, 
+    it is also possible to specify a pattern fill on a 'grid'
+    viewport.  
+  </p>
+    <p>
+    The graphical parameter settings of a viewport provide
+    a "graphical context" for any drawing within the viewport.
+    If a grob is drawn without its own explicit graphical parameter
+    settings, it will "inherit" the settings from its parent 
+    viewport.  For example, the code below will produce a rectangle
+    filled with red because, although the <code>grid.rect()</code>
+    call says nothing about the fill colour, the rectangle is drawn within
+    a viewport that sets 
+    <code>fill=2</code> (and the second colour in the default
+    palette is red).
+  </p>
+<div class="chunk" id="unnamed-chunk-14"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl kwd">pushViewport</span><span class="hl std">(</span><span class="hl kwd">viewport</span><span class="hl std">(</span><span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl num">2</span><span class="hl std">)))</span>
+<span class="hl kwd">grid.rect</span><span class="hl std">()</span>
+</pre></div>
+</div><div class="rimage default"><img src="figure/unnamed-chunk-14-1.png" title="plot of chunk unnamed-chunk-14" alt="plot of chunk unnamed-chunk-14" class="plot" /></div></div>
+    <p>
+    When the fill parameter is a pattern fill things are a little more
+    complicated.  By default, if the pattern fill has <code>group=TRUE</code>,
+    the pattern is relative to the extent of the viewport, so any
+    drawing within the viewport inherits a pattern relative to the viewport
+    (unless a grob specifies its own fill setting).
+  </p>
+    <p>
+    For example, the following code
+    draws the three rectangles as in previous examples, using
+    three <code>group=TRUE</code> patterns (pat1, pat2, pat3),
+    but with the 
+    list of pattern fills specified on the viewport within 
+    which the rectangles are drawn (rather than being specified 
+    directly in the <code>grid.rect()</code> call).
+  </p>
+<div class="chunk" id="vppat"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl kwd">pushViewport</span><span class="hl std">(</span><span class="hl kwd">viewport</span><span class="hl std">(</span><span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl kwd">list</span><span class="hl std">(pat1, pat2, pat3))))</span>
+<span class="hl kwd">grid.rect</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.4</span><span class="hl std">,</span> <span class="hl num">.7</span><span class="hl std">),</span> <span class="hl kwc">y</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.3</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">),</span> <span class="hl kwc">width</span><span class="hl std">=</span><span class="hl num">.2</span><span class="hl std">,</span> <span class="hl kwc">height</span><span class="hl std">=</span><span class="hl num">.4</span><span class="hl std">,</span>
+          <span class="hl kwc">just</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;left&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;bottom&quot;</span><span class="hl std">))</span>
+</pre></div>
+</div></div>
+<div class="chunk" id="unnamed-chunk-15"><div class="rimage default"><img src="figure/unnamed-chunk-15-1.png" title="plot of chunk unnamed-chunk-15" alt="plot of chunk unnamed-chunk-15" class="plot" /></div></div>
+    <p>
+    The three rectangles each use a different pattern fill because
+    the graphical context set up by the viewport has specified
+    a list of three pattern fills,
+    but all three pattern fills are relative to the viewport
+    (as indicated by the green rectangle, circle, and dot).
+    This result is slightly different from when we specified the three patterns
+    directly in the <code>grid.rect()</code> call
+    because the viewport (which takes up the whole image)
+    is a little larger than the bounding box around
+    the three rectangles.
+  </p>
+    <p>
+    We can also specify patterns on a viewport with <code>group=FALSE</code>.
+    In this case, any drawing within the viewport inherits a pattern
+    that is drawn relative to individual shapes.  A mixture
+    of grouped and ungrouped patterns is also possible.
+  </p>
+    <p>
+    For example, the following code pushes a viewport with three
+    pattern fills, the first an ungrouped linear gradient, the second 
+    a grouped radial gradient, and the third an ungrouped tiling pattern.
+    The three rectangles that are drawn within the viewport inherit,
+    respectively,
+    a linear gradient relative to the first rectangle,
+    a radial gradient relative to the viewport, and
+    a tiling pattern relative to the last rectangle.
+  </p>
+<div class="chunk" id="vppatmixed"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl kwd">pushViewport</span><span class="hl std">(</span><span class="hl kwd">viewport</span><span class="hl std">(</span><span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl kwd">list</span><span class="hl std">(pat4, pat2, pat6))))</span>
+<span class="hl kwd">grid.rect</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.4</span><span class="hl std">,</span> <span class="hl num">.7</span><span class="hl std">),</span> <span class="hl kwc">y</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.3</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">),</span> <span class="hl kwc">width</span><span class="hl std">=</span><span class="hl num">.2</span><span class="hl std">,</span> <span class="hl kwc">height</span><span class="hl std">=</span><span class="hl num">.4</span><span class="hl std">,</span>
+          <span class="hl kwc">just</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;left&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;bottom&quot;</span><span class="hl std">))</span>
+</pre></div>
+</div></div>
+<div class="chunk" id="unnamed-chunk-16"><div class="rimage default"><img src="figure/unnamed-chunk-16-1.png" title="plot of chunk unnamed-chunk-16" alt="plot of chunk unnamed-chunk-16" class="plot" /></div></div>
+    <h2>
+      <a name="gTrees">5. Pattern fills on gTrees</a>
+    </h2>
+    <p>
+    A gTree is a collection of grobs - when we draw a gTree,
+    we draw all of its children - and a gTree can itself
+    have graphical parameter settings.  Like a viewport,
+    the gTree provides a graphical context for its children
+    so that its children inherit settings if they do not
+    specify their own.  For example, the following code
+    draws a rectangle and a circle, both filled red, because
+    although neither rectangle nor circle say anything about
+    fill colour, they are children of a gTree that specifies
+    <code>fill=2</code> (and the second colour in the default
+    palette is red).
+  </p>
+<div class="chunk" id="unnamed-chunk-17"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl kwd">grid.draw</span><span class="hl std">(</span><span class="hl kwd">gTree</span><span class="hl std">(</span><span class="hl kwc">children</span><span class="hl std">=</span><span class="hl kwd">gList</span><span class="hl std">(</span><span class="hl kwd">rectGrob</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=</span><span class="hl num">.25</span><span class="hl std">,</span> <span class="hl kwc">width</span><span class="hl std">=</span><span class="hl num">.5</span><span class="hl std">),</span>
+                               <span class="hl kwd">circleGrob</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=</span><span class="hl num">.75</span><span class="hl std">,</span> <span class="hl kwc">r</span><span class="hl std">=</span><span class="hl num">.5</span><span class="hl std">)),</span>
+                <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl num">2</span><span class="hl std">),</span>
+                <span class="hl kwc">vp</span><span class="hl std">=</span><span class="hl kwd">viewport</span><span class="hl std">(</span><span class="hl kwc">width</span><span class="hl std">=</span><span class="hl num">.8</span><span class="hl std">,</span> <span class="hl kwc">height</span><span class="hl std">=</span><span class="hl num">.8</span><span class="hl std">)))</span>
+</pre></div>
+</div><div class="rimage default"><img src="figure/unnamed-chunk-17-1.png" title="plot of chunk unnamed-chunk-17" alt="plot of chunk unnamed-chunk-17" class="plot" /></div></div>
+    <p>
+    If we specify a pattern fill on the gTree, the children inherit the
+    pattern fill.  For example, the following code draws a gTree
+    with a linear gradient as the fill and a rectangle and a circle
+    as its children.  The result shows that, 
+    similar to viewports, if a pattern fill is specified on a gTree with
+    <code>group=TRUE</code>, the children of the gTree 
+    inherit a pattern fill that is relative to the gTree.  And
+    "relative to the gTree" means relative to
+    a bounding box around all of the children of the
+    gTree. 
+  </p>
+<div class="chunk" id="unnamed-chunk-18"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl kwd">grid.draw</span><span class="hl std">(</span><span class="hl kwd">gTree</span><span class="hl std">(</span><span class="hl kwc">children</span><span class="hl std">=</span><span class="hl kwd">gList</span><span class="hl std">(</span><span class="hl kwd">rectGrob</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=</span><span class="hl num">.25</span><span class="hl std">,</span> <span class="hl kwc">width</span><span class="hl std">=</span><span class="hl num">.5</span><span class="hl std">),</span>
+                               <span class="hl kwd">circleGrob</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=</span><span class="hl num">.75</span><span class="hl std">,</span> <span class="hl kwc">r</span><span class="hl std">=</span><span class="hl num">.5</span><span class="hl std">)),</span>
+                <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl kwd">linearGradient</span><span class="hl std">()),</span>
+                <span class="hl kwc">vp</span><span class="hl std">=</span><span class="hl kwd">viewport</span><span class="hl std">(</span><span class="hl kwc">width</span><span class="hl std">=</span><span class="hl num">.8</span><span class="hl std">,</span> <span class="hl kwc">height</span><span class="hl std">=</span><span class="hl num">.8</span><span class="hl std">)))</span>
+</pre></div>
+</div><div class="rimage default"><img src="figure/unnamed-chunk-18-1.png" title="plot of chunk unnamed-chunk-18" alt="plot of chunk unnamed-chunk-18" class="plot" /></div></div>
+    <p>
+    On the other hand, 
+    if a pattern fill is specified on a gTree with
+    <code>group=FALSE</code>, the children of the gTree inherit
+    a pattern fill that is relative to individual shapes drawn
+    by the children (just like what happens for a viewport).
+  </p>
+    <p>
+    For example, the following code defines a gTree with three
+    pattern fills, the first an ungrouped linear gradient, the second 
+    a grouped radial gradient, and the third an ungrouped tiling pattern.
+    The gTree has a single grob as its child and that grob inherits
+    the pattern fills from the gTree (because the grob does not 
+    specify its own <code>fill</code>).  The grob draws
+    three rectangles and they are filled with,
+    respectively,
+    a linear gradient relative to the first rectangle,
+    a radial gradient relative to the gTree (a bounding box
+    around all three rectangles), and
+    a tiling pattern relative to the last rectangle.
+  </p>
+<div class="chunk" id="gtreepat"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl std">gt</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">gTree</span><span class="hl std">(</span><span class="hl kwc">children</span><span class="hl std">=</span><span class="hl kwd">gList</span><span class="hl std">(</span><span class="hl kwd">rectGrob</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.4</span><span class="hl std">,</span> <span class="hl num">.7</span><span class="hl std">),</span>
+                                    <span class="hl kwc">y</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.3</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">),</span>
+                                    <span class="hl kwc">width</span><span class="hl std">=</span><span class="hl num">.2</span><span class="hl std">,</span> <span class="hl kwc">height</span><span class="hl std">=</span><span class="hl num">.4</span><span class="hl std">,</span>
+                                    <span class="hl kwc">just</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;left&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;bottom&quot;</span><span class="hl std">))),</span>
+            <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl kwd">list</span><span class="hl std">(pat4, pat2, pat6)))</span>
+<span class="hl kwd">grid.draw</span><span class="hl std">(gt)</span>
+</pre></div>
+</div></div>
+<div class="chunk" id="unnamed-chunk-19"><div class="rimage default"><img src="figure/unnamed-chunk-19-1.png" title="plot of chunk unnamed-chunk-19" alt="plot of chunk unnamed-chunk-19" class="plot" /></div></div>
+    <h2>
+      <a name="groups">6. Groups and paths with pattern fills</a>
+    </h2>
+    <p>
+    R version 4.2.0 also introduced two new graphics features:
+    groups (<a href="#murrell-groups-2021">Murrell, 2021a</a>)
+    and stroked/filled paths (<a href="#murrell-paths-2021">Murrell, 2021b</a>).  
+    These present interesting
+    complications for pattern fills.
+  </p>
+    <h3>Resolving patterns on groups</h3>
+    <p>
+    A group consists of a "source" grob combined with a "destination"
+    grob, using a compositing operator.
+    For example, the following code draws a group, with a grey fill,
+    where the group consists of one rectangle
+    combined with another rectangle using the default
+    "over" operator (one rectangle is drawn on top of the other).
+  </p>
+<div class="chunk" id="unnamed-chunk-20"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl std">r1</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">rectGrob</span><span class="hl std">(</span><span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.1</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">,</span> <span class="hl kwc">just</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;left&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;bottom&quot;</span><span class="hl std">))</span>
+<span class="hl std">r2</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">rectGrob</span><span class="hl std">(</span><span class="hl num">.4</span><span class="hl std">,</span> <span class="hl num">.4</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">,</span> <span class="hl kwc">just</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;left&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;bottom&quot;</span><span class="hl std">))</span>
+<span class="hl kwd">grid.group</span><span class="hl std">(r2,</span> <span class="hl str">&quot;over&quot;</span><span class="hl std">, r1,</span>
+           <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl str">&quot;grey&quot;</span><span class="hl std">))</span>
+</pre></div>
+</div><div class="rimage default"><img src="figure/unnamed-chunk-20-1.png" title="plot of chunk unnamed-chunk-20" alt="plot of chunk unnamed-chunk-20" class="plot" /></div></div>
+    <p>
+    If we use a radial gradient fill on the group instead,
+    the gradient is resolved relative to a bounding box around
+    both the source and the destination.  In the example below,
+    the two rectangles are both being filled separately, just
+    with the same gradient fill.
+  </p>
+<div class="chunk" id="unnamed-chunk-21"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl kwd">grid.group</span><span class="hl std">(r2,</span> <span class="hl str">&quot;over&quot;</span><span class="hl std">, r1,</span>
+           <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl kwd">radialGradient</span><span class="hl std">()))</span>
+</pre></div>
+</div><div class="rimage default"><img src="figure/unnamed-chunk-21-1.png" title="plot of chunk unnamed-chunk-21" alt="plot of chunk unnamed-chunk-21" class="plot" /></div></div>
+    <p>
+    Where things get interesting is if we use a different 
+    compositing operator.  In the code below,
+    we use a "clear" operator, so the source erases the
+    destination where the two overlap (and the source is
+    not drawn).  However, the radial gradient is still
+    resolved relative to both source and destination,
+    so the destination is filled with a radial gradient relative
+    to a bounding box around both itself and the (invisible)
+    source.
+  </p>
+<div class="chunk" id="unnamed-chunk-22"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl kwd">grid.group</span><span class="hl std">(r2,</span> <span class="hl str">&quot;clear&quot;</span><span class="hl std">, r1,</span>
+           <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl kwd">radialGradient</span><span class="hl std">()))</span>
+</pre></div>
+</div><div class="rimage default"><img src="figure/unnamed-chunk-22-1.png" title="plot of chunk unnamed-chunk-22" alt="plot of chunk unnamed-chunk-22" class="plot" /></div></div>
+    <p>
+    Another interesting scenario occurs 
+    if we separate group definition with from group use.
+    If the group use occurs within a different viewport than
+    the group definition, a transformation is applied to the group.
+    If the resolution of a pattern requires determining the bounding
+    box for the group use, the bounding box is around the transformed
+    group.
+  </p>
+    <p>
+    The following code demonstrates this sort of scenario.
+    We have a grob, <code>r3</code>, that describes a
+    rectangle in the bottom left quadrant of the image.
+    We define a group called <code>"r"</code> based on that rectangle.
+    This definition occurs in the default viewport that is centred on
+    (.5, .5).
+    We then have another grob <code>user3</code> that uses the
+    group <code>"r"</code> in a viewport that is centred on (1, 1).
+    That use will translate the rectangle up to the top-right quadrant
+    of the image.
+    Now we define a gTree with two children: the grob <code>r3</code>,
+    a rectangle in the bottom-left quadrant;
+    and the grob <code>user3</code>, a rectangle 
+    in the top-right quadrant.  
+    The gTree has a radial gradient fill, which gets resolved relative
+    to the bounding box around the gTree, which
+    is the entire image.
+    The result is that the rectangle at bottom-left is filled with 
+    a radial gradient that was resolved relative to the entire image.
+    The rectangle at top-right has no fill because it is just a 
+    use of the group <code>"r"</code>, which was defined with no fill.
+  </p>
+<div class="chunk" id="unnamed-chunk-23"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl std">r3</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">rectGrob</span><span class="hl std">(</span><span class="hl num">0</span><span class="hl std">,</span> <span class="hl num">0</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">,</span> <span class="hl num">.5</span><span class="hl std">,</span> <span class="hl kwc">just</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl str">&quot;left&quot;</span><span class="hl std">,</span> <span class="hl str">&quot;bottom&quot;</span><span class="hl std">))</span>
+<span class="hl kwd">grid.define</span><span class="hl std">(r3,</span> <span class="hl kwc">name</span><span class="hl std">=</span><span class="hl str">&quot;r&quot;</span><span class="hl std">)</span>
+<span class="hl std">user3</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">useGrob</span><span class="hl std">(</span><span class="hl str">&quot;r&quot;</span><span class="hl std">,</span> <span class="hl kwc">vp</span><span class="hl std">=</span><span class="hl kwd">viewport</span><span class="hl std">(</span><span class="hl num">1</span><span class="hl std">,</span> <span class="hl num">1</span><span class="hl std">))</span>
+<span class="hl std">gt</span> <span class="hl kwb">&lt;-</span> <span class="hl kwd">gTree</span><span class="hl std">(</span><span class="hl kwc">children</span><span class="hl std">=</span><span class="hl kwd">gList</span><span class="hl std">(r3, user3),</span>
+            <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl kwd">radialGradient</span><span class="hl std">()))</span>
+<span class="hl kwd">grid.draw</span><span class="hl std">(gt)</span>
+</pre></div>
+</div><div class="rimage default"><img src="figure/unnamed-chunk-23-1.png" title="plot of chunk unnamed-chunk-23" alt="plot of chunk unnamed-chunk-23" class="plot" /></div></div>
+    <p>
+    The situation is simpler if we just specify a 
+    pattern fill on a grob <em>within</em> the group.
+    In that case, the pattern is recorded normally as part 
+    of the group definition and the pattern
+    is transformed (on the device) when the group is used.
+  </p>
+    <p>
+    In order for the calculation of the bounding box of a group use
+    to work, the bounding box of the group has to be recorded
+    when the group is defined.  In cases where it is known
+    that the group will not be reused, this calculation can be 
+    turned off using the <code>coords</code> argument.
+  </p>
+    <h3>Resolving patterns on stroked and filled paths</h3>
+    <p>
+    When a fill pattern is specified for a stroked or filled path,
+    the bounding box for resolving the pattern is
+    based on all of the grobs that define the
+    path.  This is because a stroked or filled path is conceptually
+    just a single shape.
+    In the example below, we fill a path that is constructed from
+    two nested circles, using an "evenodd" rule so that the
+    inner circle generates a hole in the outer circle.  We then
+    fill the resulting "donut" with a radial gradient, which
+    is resolved relative to a bounding box around both circles.
+  </p>
+<div class="chunk" id="unnamed-chunk-24"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl kwd">grid.fill</span><span class="hl std">(</span><span class="hl kwd">circleGrob</span><span class="hl std">(</span><span class="hl kwc">r</span><span class="hl std">=</span><span class="hl kwd">c</span><span class="hl std">(</span><span class="hl num">.2</span><span class="hl std">,</span> <span class="hl num">.4</span><span class="hl std">)),</span> <span class="hl kwc">rule</span><span class="hl std">=</span><span class="hl str">&quot;evenodd&quot;</span><span class="hl std">,</span>
+          <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl kwd">radialGradient</span><span class="hl std">()))</span>
+</pre></div>
+</div><div class="rimage default"><img src="figure/unnamed-chunk-24-1.png" title="plot of chunk unnamed-chunk-24" alt="plot of chunk unnamed-chunk-24" class="plot" /></div></div>
+    <p>
+    A further corollary is that  <code>group=FALSE</code>
+    will have no effect on the resolution of a pattern fill
+    for a stroked or filled path.
+    For example the code below constructs a path from two 
+    distinct circles and then fills the path with a radial gradient
+    with <code>group=FALSE</code>.  The path is a single
+    shape so the radial gradient is resolved relative to a bounding box
+    around both of the circles.
+  </p>
+<div class="chunk" id="unnamed-chunk-25"><div class="rcode"><div class="source"><pre class="knitr r"><span class="hl kwd">grid.fillStroke</span><span class="hl std">(</span><span class="hl kwd">circleGrob</span><span class="hl std">(</span><span class="hl kwc">x</span><span class="hl std">=</span><span class="hl num">1</span><span class="hl opt">:</span><span class="hl num">2</span><span class="hl opt">/</span><span class="hl num">3</span><span class="hl std">,</span> <span class="hl kwc">r</span><span class="hl std">=</span><span class="hl num">.3</span><span class="hl std">),</span>
+                <span class="hl kwc">gp</span><span class="hl std">=</span><span class="hl kwd">gpar</span><span class="hl std">(</span><span class="hl kwc">fill</span><span class="hl std">=</span><span class="hl kwd">radialGradient</span><span class="hl std">(</span><span class="hl kwc">group</span><span class="hl std">=</span><span class="hl num">FALSE</span><span class="hl std">)))</span>
+</pre></div>
+</div><div class="rimage default"><img src="figure/unnamed-chunk-25-1.png" title="plot of chunk unnamed-chunk-25" alt="plot of chunk unnamed-chunk-25" class="plot" /></div></div>
+    <h2>
+      <a name="discussion">7. Summary</a>
+    </h2>
+    <p>
+    From R version 4.2.0, we can resolve
+    pattern fills relative to individual shapes within a grob
+    <em>and</em> we can specify different pattern fills for 
+    different shapes within a grob.
+    This means that pattern fills can now be used just like
+    normal colour fills.
+    This includes using pattern fills on individual data symbols.
+  </p>
+    <h2>
+      <a name="requirements">8. Technical requirements</a>
+    </h2>
+    <p>
+    The examples and discussion in this report relate to 
+    R version 4.2.0.
+  </p>
+    <p>
+    The 'ggplot2' example that draws a points with gradients
+    in the legend requires 'gggrid' version 0.2-0 or higher.
+  </p>
+    <p>
+    This report was generated within a Docker container
+    (see <a href="#Resources">Resources</a> section below).
+  </p>
+    <h2>
+      <a name="Resources">9. Resources</a>
+    </h2>
+    <ul>
+      <li>
+      The <a href="vecpat.cml">raw source file</a> for this
+      report, a <a href="vecpat.xml">valid XML</a>
+      transformation of the source file, a <a href="vecpat.Rhtml">'knitr' document</a> generated from
+      the XML file, 
+      two <a href="toc.R">R</a> <a href="bib.R">files</a> and
+      the <a href="vecpat.bib">bibtex file</a>
+      that are used to generate the table of contents and reference sections,
+      two <a href="common.xsl">XSL</a> <a href="knitr.xsl">files</a> and an 
+      <a href="knit.R">R file</a> that are used to transform the XML to
+      the 'knitr' document, and a <a href="Makefile">Makefile</a> that
+      contains code for the other transformations and coordinates
+      everything.  
+      These materials are also available
+      on <a href="https://github.com/pmur002/vecpat-report/releases/tag/v1">github</a>.
+    </li>
+      <li>
+      This report was generated within a 
+      <a href="https://www.docker.com/">Docker</a> container.
+      The Docker command to build the report is included in the Makefile above.
+      The Docker image for the container is available from
+      <a href="https://hub.docker.com/r/pmur002/vecpat-report/">Docker Hub</a>;
+      alternatively, the image can be rebuilt from its 
+      <a href="Dockerfile">Dockerfile</a>.
+    </li>
+    </ul>
+    <h2>How to cite this report</h2>
+    <p>
+    Murrell, P. (2021). "Vectorised Pattern Fills in R Graphics" 
+    Technical Report 2021-??, Department of Statistics, The University of Auckland. 
+    Version 1.
+    [ <a href="how-to-cite.bib">bib</a> |
+      <a href="http://dx.doi.org/">DOI</a> | 
+      <a href="https://stattech.blogs.auckland.ac.nz/">http</a> ]
+  </p>
+    <h2>
+      <a name="references">10. References</a>
+    </h2>
+    <dl>
+      <dt>
+[<a name="PDF">Adobe Systems Incorporated, 2001</a>]
+</dt>
+      <dd>
+Adobe Systems Incorporated (2001).
+ <em>PDF Reference: Adobe portable document format version 1.4</em>, 3rd
+  edition.
+[ <a href="vecpat-bib_bib.html#PDF">bib</a> | 
+<a href="https://www.adobe.com/content/dam/acom/en/devnet/pdf/pdfs/pdf_reference_archives/PDFReference.pdf">.pdf</a> ]
+
+</dd>
+      <dt>
+[<a name="murrell-definitions-2020">Murrell, 2020</a>]
+</dt>
+      <dd>
+Murrell, P. (2020).
+ Catching up with R graphics.
+ Technical Report 2020-04, Department of Statistics, The University of
+  Auckland.
+ version 1.
+[ <a href="vecpat-bib_bib.html#murrell-definitions-2020">bib</a> | 
+<a href="http://dx.doi.org/10.17608/k6.auckland.12649751">DOI</a> | 
+<a href="https://stattech.blogs.auckland.ac.nz/2020/07/14/2020-04-catching-up-with-r-graphics/">http</a> ]
+
+</dd>
+      <dt>
+[<a name="murrell-groups-2021">Murrell, 2021a</a>]
+</dt>
+      <dd>
+Murrell, P. (2021a).
+ Groups, compositing operators, and affine transformations in r
+  graphics.
+ Technical Report 2021-02, Department of Statistics, The University of
+  Auckland.
+ version 1.
+[ <a href="vecpat-bib_bib.html#murrell-groups-2021">bib</a> | 
+<a href="http://dx.doi.org/10.17608/k6.auckland.17009120">DOI</a> | 
+<a href="https://stattech.blogs.auckland.ac.nz/2021/11/15/2021-02-groups-compositing-operators-and-affine-transformations-in-r-graphics">http</a> ]
+
+</dd>
+      <dt>
+[<a name="murrell-paths-2021">Murrell, 2021b</a>]
+</dt>
+      <dd>
+Murrell, P. (2021b).
+ Stroking and filling paths in r graphics.
+ Technical Report 2021-03, Department of Statistics, The University of
+  Auckland.
+ version 1.
+[ <a href="vecpat-bib_bib.html#murrell-paths-2021">bib</a> | 
+<a href="http://dx.doi.org/10.17608/k6.auckland.17019272">DOI</a> | 
+<a href="https://stattech.blogs.auckland.ac.nz/2021/11/16/2021-03-stroking-and-filling-paths-in-r-graphics">http</a> ]
+
+</dd>
+      <dt>
+[<a name="pkg:gggrid">Murrell, 2022</a>]
+</dt>
+      <dd>
+Murrell, P. (2022).
+ <em>gggrid: Draw with 'grid' in 'ggplot2'</em>.
+ R package version 0.2-0.
+[ <a href="vecpat-bib_bib.html#pkg:gggrid">bib</a> | 
+<a href="https://CRAN.R-project.org/package=gggrid">http</a> ]
+
+</dd>
+      <dt>
+[<a name="cairo">Packard et al., 2021</a>]
+</dt>
+      <dd>
+Packard, K., Worth, C., and Esfahbod, B. (2021).
+ Cairo graphics library.
+ <a href="https://www.cairographics.org/">https://www.cairographics.org/</a>.
+ Accessed: 2021-10-24.
+[ <a href="vecpat-bib_bib.html#cairo">bib</a> ]
+
+</dd>
+      <dt>
+[<a name="pkg:ragg">Pedersen and Shemanarev, 2021</a>]
+</dt>
+      <dd>
+Pedersen, T. L. and Shemanarev, M. (2021).
+ <em>ragg: Graphic Devices Based on AGG</em>.
+ R package version 1.2.0.
+[ <a href="vecpat-bib_bib.html#pkg:ragg">bib</a> | 
+<a href="https://CRAN.R-project.org/package=ragg">http</a> ]
+
+</dd>
+      <dt>
+[<a name="R">R Core Team, 2019</a>]
+</dt>
+      <dd>
+R Core Team (2019).
+ <em>R: A Language and Environment for Statistical Computing</em>.
+ R Foundation for Statistical Computing, Vienna, Austria.
+[ <a href="vecpat-bib_bib.html#R">bib</a> | 
+<a href="https://www.R-project.org/">http</a> ]
+
+</dd>
+      <dt>
+[<a name="pkg:ggplot2">Wickham, 2016</a>]
+</dt>
+      <dd>
+Wickham, H. (2016).
+ <em>ggplot2: Elegant Graphics for Data Analysis</em>.
+ Springer-Verlag New York.
+[ <a href="vecpat-bib_bib.html#pkg:ggplot2">bib</a> | 
+<a href="https://ggplot2.tidyverse.org">http</a> ]
+
+</dd>
+      <dt>
+[<a name="pkg:svglite">Wickham et al., 2022</a>]
+</dt>
+      <dd>
+Wickham, H., Henry, L., Pedersen, T. L., Luciani, T. J., Decorde, M., and Lise,
+  V. (2022).
+ <em>svglite: An 'SVG' Graphics Device</em>.
+ R package version 2.1.0.
+[ <a href="vecpat-bib_bib.html#pkg:svglite">bib</a> | 
+<a href="https://CRAN.R-project.org/package=svglite">http</a> ]
+
+</dd>
+    </dl>
+    <hr>
+    <p><a rel="license" href="http://creativecommons.org/licenses/by/4.0/"><img class="CC" alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by/4.0/88x31.png"></a><br><span xmlns:dct="http://purl.org/dc/terms/" property="dct:title">This document</span>
+    by <span xmlns:cc="http://creativecommons.org/ns#" property="cc:attributionName">Paul
+    Murrell</span> is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by/4.0/">Creative
+    Commons Attribution 4.0 International License</a>.
+  </p>
+  </body>
+</html>

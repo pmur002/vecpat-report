@@ -1,0 +1,818 @@
+<?xml version="1.0" encoding="utf-8"?>
+<html>
+<head>
+  <style type="text/css">
+    @media print {
+      body { }
+      p.img { text-align: center; page-break-inside: avoid }
+      img.CC { display: inline }
+    }
+    @media screen {
+      body { max-width: 800px; margin: auto }
+      p.img { text-align: center }
+      img.CC { display: inline }
+    }
+    p.date {
+      font-size: smaller;
+      margin: 0;
+    }
+    p.versionHistory {
+      color: gray
+    }
+    p.versionHistory a {
+      color: gray
+    }
+    p.ref {
+      text-indent: -2em;
+      padding-left: 2em;
+    }
+    p.fig {
+      text-align: left;
+    }
+    p.fig img, img.plot {
+      box-shadow: 10px 10px 20px;
+      margin-top: 10px;
+      margin-bottom: 20px;      
+    }
+  </style>
+
+</head>
+<body>
+  <h1>Vectorised Pattern Fills in R Graphics</h1>
+  <p>
+    <span style="font-style: italic">by Paul Murrell</span>
+    <a href="http://orcid.org"><img alt="" src="https://www.stat.auckland.ac.nz/~paul/ORCID/ORCiD.png" style="width: 16px; height: 16px; vertical-align: middle" /></a> <span style="font-family: mono; font-size: small"><a href="http://orcid.org/0000-0002-3224-8858">http://orcid.org/0000-0002-3224-8858</a></span>
+  </p>
+  <p class="date">
+    Version 1:  
+    <rcode echo="FALSE" results="asis"><![CDATA[
+cat(format(Sys.Date(), "%A %d %B %Y"))
+    ]]></rcode>
+  </p>
+
+  <rcode id="init" echo="FALSE" message="FALSE" results="hide"><![CDATA[
+opts_chunk$set(comment=" ", tidy=FALSE, 
+               dev="png", ## dev="svg",
+               dpi=96)
+options(width=100)
+## For wonky desktop set up
+options(bitmapType="cairo")
+  ]]></rcode>
+  <rcode echo="FALSE" message="FALSE"><![CDATA[
+    library(grid)
+  ]]></rcode>
+
+  <hr/>
+  <p>
+    <a rel="license"
+    href="http://creativecommons.org/licenses/by/4.0/"><img class="CC"
+    alt="Creative Commons License" style="border-width:0"
+    src="https://i.creativecommons.org/l/by/4.0/88x31.png"/></a><br/><span
+    xmlns:dct="http://purl.org/dc/terms/"
+    property="dct:title">This document</span>
+    by <span xmlns:cc="http://creativecommons.org/ns#"
+    property="cc:attributionName">Paul
+    Murrell</span> is licensed under a <a rel="license"
+    href="http://creativecommons.org/licenses/by/4.0/">Creative
+    Commons Attribution 4.0 International License</a>.
+  </p>
+  <hr/>
+  <p>
+    This document describes an extension of the support for 
+    pattern fills in R graphics (linear gradients, radial gradients, and
+    tiling patterns) to 
+    allow multiple pattern fills to be specified at once when drawing. 
+  </p>
+  <p>
+    These features are available in R version 4.2.0.
+  </p>
+  <p>
+    Gradient fills and pattern fills are currently only available on the
+    <code>pdf()</code> and Cairo-based graphics devices, of the core
+    graphics devices provided by the 'graphics' package, plus the
+    graphics devices provided by the 'ragg' package (<a href="#pkg:ragg"/>)
+    and the 'svglite' package (<a href="#pkg:svglite"/>).
+  </p>
+
+  <toc/>
+
+  <h2><a name="intro">Introduction</a></h2>
+
+  <p>
+    Changes to the graphics engine in R 4.1.0 added support for
+    pattern fills, clipping paths, and masks 
+    (<a href="#murrell-definitions-2020"/>).  
+    The patterns that are currently supported are linear
+    gradients, radial gradients, and tiling patterns.
+    The following example demonstrates the use of a linear gradient
+    to fill a rectangle.  In this case, we have a gradient from black
+    to white and back again several times.
+  </p>
+  <rcode fig.width="4" fig.height="2"><![CDATA[
+colours <- c("black", "white", "black", "white", "black")
+gradient <- linearGradient(colours)
+grid.rect(width=.8, height=.8, 
+          gp=gpar(fill=gradient))
+  ]]></rcode>
+
+  <p>
+    The expected behaviour is reasonably clear when drawing a single shape
+    like the single rectangle above;  the linear gradient is relative to
+    the dimensions of the rectangle (by default, from bottom-left to top-right).
+    However, it is possible
+    for a single call to <code>grid.rect()</code> to draw more than
+    one rectangle.  What should happen then?
+  </p>
+  <p>
+    What currently happens is shown below:  the linear gradient is relative
+    to a bounding box around all of the rectangles that are drawn
+    (as indicated by the green rectangle in the output below).
+  </p>
+
+  <rcode id="multirect" eval="FALSE"><![CDATA[
+grid.rect(x=c(.1, .4, .7), y=c(.1, .3, .5), width=.2, height=.4, 
+          just=c("left", "bottom"),
+          gp=gpar(fill=gradient))
+  ]]></rcode>
+
+  <rcode echo="FALSE" fig.width="4" fig.height="2"><![CDATA[
+<<multirect>>
+grid.rect(width=.8, height=.8, 
+          gp=gpar(col="green", lty="solid", fill=NA))
+  ]]></rcode>
+
+  <p>
+    This might be what we want to have happen, but there are 
+    other possible outcomes.  For example, we might want to fill each
+    individual rectangle separately with its own linear gradient.
+  </p>
+  <p>
+    This document describes an extension of the 'grid' support for 
+    pattern fills that allows for more control over the behaviour
+    of pattern fills when we are drawing more than one shape.
+  </p>
+  <p>
+    In brief, the changes are: 
+  </p>
+  <ol>
+    <li>
+      The <code>gpar</code> function will now accept a <em>list</em> of
+      patterns, e.g., 
+      <code>gpar(fill=list(linearGradient(), radialGradient())</code>,
+      so that we can specify a "vector" of patterns.
+    </li>
+    <li>
+      The functions that generate patterns now have a <code>group</code>
+      argument, e.g., <code>linearGradient(group = FALSE)</code>,
+      so that the pattern can be resolved relative to individual shapes
+      rather than the bounding box of all shapes.
+    </li>
+  </ol>
+
+  <h2><a name="vecpat">Vectorised pattern fills</a></h2>
+  <p>
+    The functions <code>linearGradient()</code>,
+    <code>radialGradient()</code>, and <code>pattern()</code>
+    all have a new argument called <code>group</code>.
+    By default, this argument is <code>TRUE</code>, which
+    means that the pattern fill is relative to the "group"
+    of shapes that are being drawn, as shown above.
+  </p>
+  <p>
+    However, if we specify <code>group=FALSE</code>, then
+    the pattern fill is drawn relative to each individual
+    shape that is being drawn.  For example, the code below
+    draws the same three rectangles as the previous example,
+    and uses the same linear gradient as before except that
+    <code>group=FALSE</code>.  Each rectangle is now filled
+    with the gradient relative to the individual rectangle
+    (as indicated by the green rectangles).
+  </p>
+  <rcode id="multirectsolo" eval="FALSE"><![CDATA[
+gradient2 <- linearGradient(colours, group=FALSE)
+grid.rect(x=c(.1, .4, .7), y=c(.1, .3, .5), width=.2, height=.4, 
+          just=c("left", "bottom"),
+          gp=gpar(fill=gradient2))
+  ]]></rcode>
+
+  <rcode echo="FALSE" fig.width="4" fig.height="2"><![CDATA[
+<<multirectsolo>>
+grid.rect(x=c(.1, .4, .7), y=c(.1, .3, .5), width=.2, height=.4, 
+          just=c("left", "bottom"),
+          gp=gpar(col="green", lty="solid", fill=NA))
+  ]]></rcode>
+  <p>
+    It is also now possible to specify a <em>list</em> of pattern fills
+    rather than just a single pattern fill.
+    For example, the following code defines a linear gradient,
+    a radial gradient, 
+    and a polka dot tiling pattern.
+  </p>
+  <rcode><![CDATA[
+pat1 <- linearGradient(colours)
+pat2 <- radialGradient(colours)
+pat3 <- pattern(circleGrob(r=unit(1, "mm"), gp=gpar(fill="black")),
+                width=unit(3, "mm"), height=unit(3, "mm"),
+                extend="repeat")
+  ]]></rcode>
+  <p>
+    The following code draws three rectangles and specifies
+    a list of three pattern fills. The result is that each rectangle uses a
+    different pattern fill.
+  </p>
+  <rcode id="multipat" eval="FALSE"><![CDATA[
+grid.rect(x=c(.1, .4, .7), y=c(.1, .3, .5), width=.2, height=.4, 
+          just=c("left", "bottom"),
+          gp=gpar(fill=list(pat1, pat2, pat3)))
+  ]]></rcode>
+
+  <rcode echo="FALSE" fig.width="4" fig.height="2"><![CDATA[
+<<multipat>>
+grid.rect(width=.8, height=.8, 
+          gp=gpar(col="green", lty="solid", fill=NA))
+grid.circle(r=.4, 
+            gp=gpar(col="green", lty="solid", fill=NA))
+grid.circle(r=unit(1, "mm"), gp=gpar(col="green", fill="green"))
+  ]]></rcode>
+
+  <p>
+    However, the three pattern fills above are still each relative to the 
+    bounding box around all of the rectangles.  This is indicated 
+    by the green rectangle (for the linear gradient),
+    the green circle (for the radial gradient),
+    and the green dot (which is the basis of the tiling pattern).
+  </p>
+  <p>
+    We can
+    change this behaviour using the new <code>group</code> argument.
+    For example, the following code defines three new patterns, very
+    similar to the previous three patterns,
+    but with <code>group=FALSE</code>.
+  </p>
+  <rcode><![CDATA[
+pat4 <- linearGradient(colours, group=FALSE)
+pat5 <- radialGradient(colours, group=FALSE)
+pat6 <- pattern(circleGrob(r=unit(1, "mm"), gp=gpar(fill="black")),
+                width=unit(3, "mm"), height=unit(3, "mm"),
+                extend="repeat", group=FALSE)
+  ]]></rcode>
+
+  <p>
+    The following code draws the same three rectangles as before,
+    specifies the list of three new patterns as the fill, and
+    the result is that each pattern is filled with its own
+    pattern and each pattern is relative to its individual 
+    rectangle (again indicated by a green rectangle, circle, and dot).
+  </p>
+  <rcode id="multirectpat" eval="FALSE"><![CDATA[
+grid.rect(x=c(.1, .4, .7), y=c(.1, .3, .5), width=.2, height=.4, 
+          just=c("left", "bottom"),
+          gp=gpar(fill=list(pat4, pat5, pat6)))
+  ]]></rcode>
+
+  <rcode echo="FALSE" fig.width="4" fig.height="2"><![CDATA[
+<<multirectpat>>
+grid.rect(.2, .3, width=.2, height=.4, 
+          gp=gpar(col="green", lty="solid", fill=NA))
+grid.circle(r=.2, 
+            gp=gpar(col="green", lty="solid", fill=NA))
+grid.circle(.8, .7, r=unit(1, "mm"), gp=gpar(col="green", fill="green"))
+  ]]></rcode>
+
+  <p>
+    It is also possible to specify a list of patterns, some of which
+    are "grouped" and some of which are not.  The following code
+    demonstrates this by drawing three rectangles
+    with a linear gradient (not grouped),
+    a radial gradient (grouped), and a tiling pattern (not grouped).
+    The linear gradient is relative to the first rectangle (bottom-left),
+    the radial gradient is relative to the bounding box of all three
+    rectangles, and the tiling pattern is relative to the third rectangle
+    (top-right). 
+ </p>
+
+  <rcode id="mixedrectpat" eval="FALSE"><![CDATA[
+grid.rect(x=c(.1, .4, .7), y=c(.1, .3, .5), width=.2, height=.4, 
+          just=c("left", "bottom"),
+          gp=gpar(fill=list(pat4, pat2, pat6)))
+  ]]></rcode>
+
+  <rcode echo="FALSE" fig.width="4" fig.height="2"><![CDATA[
+<<mixedrectpat>>
+grid.rect(.2, .3, width=.2, height=.4, 
+          gp=gpar(col="green", lty="solid", fill=NA))
+grid.circle(r=.4, 
+            gp=gpar(col="green", lty="solid", fill=NA))
+grid.circle(.8, .7, r=unit(1, "mm"), gp=gpar(col="green", fill="green"))
+  ]]></rcode>
+  
+  <p>
+    In summary, it is now possible to specify a "vector" of 
+    pattern fills, just like being able to specify a vector
+    of fill colours, or line widths, or font sizes.      
+    Only as many patterns are used as there are shapes to fill
+    (the remainder are ignored) and 
+    patterns are recycled if necessary.
+    Furthermore, when we draw a grob that produces more than
+    one shape, the new <code>group</code> argument allows the 
+    pattern fills to be resolved relative to individual shapes
+    rather than an overall bounding box.
+  </p>
+
+  <h2><a name="points">Data symbols with pattern fills</a></h2>
+  <p>
+    Another improvement to the 'grid' support of pattern fills
+    is the ability to fill data symbols, as drawn by <code>grid.points()</code>
+    (this was not possible in R 4.1.0).
+    If we combine this with the ability to fill individual shapes, we can
+    fill individual data symbols with pattern fills.
+    For example, the following code defines a radial gradient
+    (with <code>group=FALSE</code>)
+    and then fills the data symbols on a 'ggplot2' plot 
+    (<a href="#pkg:ggplot2"/>)
+    with that gradient.  The 'ggplot2' package does not yet have
+    an interface for pattern fills, but the 'gggrid' package 
+    (<a href="#pkg:gggrid"/>) 
+    allows us to combine raw 'grid' output with the 'ggplot2' plot.
+  </p>
+  <rcode message="FALSE"><![CDATA[
+library(gggrid)    
+  ]]></rcode>
+  <rcode fig.width="4" fig.height="4"><![CDATA[
+gradient <- radialGradient(c("white", "black"), cx1=.7, cy1=.7, group=FALSE)
+ggplot(mtcars, aes(x=disp, y=mpg)) +
+    grid_panel(function(data, coords) {
+                   pointsGrob(coords$x, coords$y, pch=21,
+                              gp=gpar(fill=gradient, col=NA))
+               })
+  ]]></rcode>
+  <p>
+    In the example above, we defined a single radial gradient
+    and recycled that gradient across multiple data symbols.
+    The next example generates a separate gradient for each
+    data symbol based on a categorical variable (and a colour
+    that is selected by 'ggplot2').  This shows that it can be
+    easy to generate a list of pattern fills with functions
+    like <code>lapply()</code>.  This example also uses 'gggrid'
+    to draw points with gradients in the legend.
+  </p>
+  <rcode fig.width="4" fig.height="4"><![CDATA[
+gradientPoints <- function(data, coords) {
+    gradients <- lapply(data$colour,
+                        function(x) {
+                            radialGradient(c("white", x),
+                                           cx1=.7, cy1=.7,
+                                           group=FALSE)
+                            })
+    pointsGrob(coords$x, coords$y, pch=21,
+               gp=gpar(fill=gradients, col=NA))
+}
+gradientKey <-  function(data, ...) {    
+    gradient <- radialGradient(c("white", data$colour), cx1=.7, cy1=.7,
+                               group=FALSE) 
+    pointsGrob(.5, .5, pch=21,
+               gp=gpar(fill=gradient, col=NA))
+}
+mtcars$am <- as.factor(mtcars$am)
+ggplot(mtcars) +
+    grid_panel(gradientPoints, 
+               mapping=aes(x=disp, y=mpg, colour=am),
+               key_glyph=gradientKey, show.legend=TRUE)
+  ]]></rcode>
+
+  <h2><a name="viewports">Pattern fills on viewports</a></h2>
+  <p>
+    As well as being able to specify a pattern fill on a grob, 
+    it is also possible to specify a pattern fill on a 'grid'
+    viewport.  
+  </p>
+  <p>
+    The graphical parameter settings of a viewport provide
+    a "graphical context" for any drawing within the viewport.
+    If a grob is drawn without its own explicit graphical parameter
+    settings, it will "inherit" the settings from its parent 
+    viewport.  For example, the code below will produce a rectangle
+    filled with red because, although the <code>grid.rect()</code>
+    call says nothing about the fill colour, the rectangle is drawn within
+    a viewport that sets 
+    <code>fill=2</code> (and the second colour in the default
+    palette is red).
+  </p>
+  <rcode fig.width="1" fig.height="1"><![CDATA[
+pushViewport(viewport(gp=gpar(fill=2)))
+grid.rect()
+  ]]></rcode>
+  <p>
+    When the fill parameter is a pattern fill things are a little more
+    complicated.  By default, if the pattern fill has <code>group=TRUE</code>,
+    the pattern is relative to the extent of the viewport, so any
+    drawing within the viewport inherits a pattern relative to the viewport
+    (unless a grob specifies its own fill setting).
+  </p>
+  <p>
+    For example, the following code
+    draws the three rectangles as in previous examples, using
+    three <code>group=TRUE</code> patterns (pat1, pat2, pat3),
+    but with the 
+    list of pattern fills specified on the viewport within 
+    which the rectangles are drawn (rather than being specified 
+    directly in the <code>grid.rect()</code> call).
+  </p>
+  <rcode id="vppat" eval="FALSE"><![CDATA[
+pushViewport(viewport(gp=gpar(fill=list(pat1, pat2, pat3))))
+grid.rect(x=c(.1, .4, .7), y=c(.1, .3, .5), width=.2, height=.4, 
+          just=c("left", "bottom"))
+  ]]></rcode>
+
+  <rcode echo="FALSE" fig.width="4" fig.height="2"><![CDATA[
+<<vppat>>
+grid.rect(gp=gpar(col="green", lty="solid", fill=NA))
+grid.circle(gp=gpar(col="green", lty="solid", fill=NA))
+grid.circle(.5, .5, r=unit(1, "mm"), gp=gpar(col="green", fill="green"))
+  ]]></rcode>
+  
+  <p>
+    The three rectangles each use a different pattern fill because
+    the graphical context set up by the viewport has specified
+    a list of three pattern fills,
+    but all three pattern fills are relative to the viewport
+    (as indicated by the green rectangle, circle, and dot).
+    This result is slightly different from when we specified the three patterns
+    directly in the <code>grid.rect()</code> call
+    because the viewport (which takes up the whole image)
+    is a little larger than the bounding box around
+    the three rectangles.
+  </p>
+  <p>
+    We can also specify patterns on a viewport with <code>group=FALSE</code>.
+    In this case, any drawing within the viewport inherits a pattern
+    that is drawn relative to individual shapes.  A mixture
+    of grouped and ungrouped patterns is also possible.
+  </p>
+  <p>
+    For example, the following code pushes a viewport with three
+    pattern fills, the first an ungrouped linear gradient, the second 
+    a grouped radial gradient, and the third an ungrouped tiling pattern.
+    The three rectangles that are drawn within the viewport inherit,
+    respectively,
+    a linear gradient relative to the first rectangle,
+    a radial gradient relative to the viewport, and
+    a tiling pattern relative to the last rectangle.
+  </p>
+  
+  <rcode id="vppatmixed" eval="FALSE"><![CDATA[
+pushViewport(viewport(gp=gpar(fill=list(pat4, pat2, pat6))))
+grid.rect(x=c(.1, .4, .7), y=c(.1, .3, .5), width=.2, height=.4, 
+          just=c("left", "bottom"))
+  ]]></rcode>
+
+  <rcode echo="FALSE" fig.width="4" fig.height="2"><![CDATA[
+<<vppatmixed>>
+grid.rect(.2, .3, width=.2, height=.4, 
+          gp=gpar(col="green", lty="solid", fill=NA))
+grid.circle(gp=gpar(col="green", lty="solid", fill=NA))
+grid.circle(.8, .7, r=unit(1, "mm"), gp=gpar(col="green", fill="green"))
+  ]]></rcode>
+
+  <h2><a name="gTrees">Pattern fills on gTrees</a></h2>
+
+  <p>
+    A gTree is a collection of grobs - when we draw a gTree,
+    we draw all of its children - and a gTree can itself
+    have graphical parameter settings.  Like a viewport,
+    the gTree provides a graphical context for its children
+    so that its children inherit settings if they do not
+    specify their own.  For example, the following code
+    draws a rectangle and a circle, both filled red, because
+    although neither rectangle nor circle say anything about
+    fill colour, they are children of a gTree that specifies
+    <code>fill=2</code> (and the second colour in the default
+    palette is red).
+  </p>
+  <rcode fig.width="2" fig.height="1"><![CDATA[
+grid.draw(gTree(children=gList(rectGrob(x=.25, width=.5),
+                               circleGrob(x=.75, r=.5)),
+                gp=gpar(fill=2),
+                vp=viewport(width=.8, height=.8)))
+  ]]></rcode>
+  <p>
+    If we specify a pattern fill on the gTree, the children inherit the
+    pattern fill.  For example, the following code draws a gTree
+    with a linear gradient as the fill and a rectangle and a circle
+    as its children.  The result shows that, 
+    similar to viewports, if a pattern fill is specified on a gTree with
+    <code>group=TRUE</code>, the children of the gTree 
+    inherit a pattern fill that is relative to the gTree.  And
+    "relative to the gTree" means relative to
+    a bounding box around all of the children of the
+    gTree. 
+  </p>
+  <rcode fig.width="2" fig.height="1"><![CDATA[
+grid.draw(gTree(children=gList(rectGrob(x=.25, width=.5),
+                               circleGrob(x=.75, r=.5)),
+                gp=gpar(fill=linearGradient()),
+                vp=viewport(width=.8, height=.8)))
+  ]]></rcode>
+  <p>
+    On the other hand, 
+    if a pattern fill is specified on a gTree with
+    <code>group=FALSE</code>, the children of the gTree inherit
+    a pattern fill that is relative to individual shapes drawn
+    by the children (just like what happens for a viewport).
+  </p>
+  <p>
+    For example, the following code defines a gTree with three
+    pattern fills, the first an ungrouped linear gradient, the second 
+    a grouped radial gradient, and the third an ungrouped tiling pattern.
+    The gTree has a single grob as its child and that grob inherits
+    the pattern fills from the gTree (because the grob does not 
+    specify its own <code>fill</code>).  The grob draws
+    three rectangles and they are filled with,
+    respectively,
+    a linear gradient relative to the first rectangle,
+    a radial gradient relative to the gTree (a bounding box
+    around all three rectangles), and
+    a tiling pattern relative to the last rectangle.
+  </p>
+  
+  <rcode id="gtreepat" eval="FALSE"><![CDATA[
+gt <- gTree(children=gList(rectGrob(x=c(.1, .4, .7),
+                                    y=c(.1, .3, .5),
+                                    width=.2, height=.4, 
+                                    just=c("left", "bottom"))),
+            gp=gpar(fill=list(pat4, pat2, pat6)))
+grid.draw(gt)
+  ]]></rcode>
+
+  <rcode echo="FALSE" fig.width="4" fig.height="2"><![CDATA[
+<<gtreepat>>
+grid.rect(.2, .3, width=.2, height=.4, 
+          gp=gpar(col="green", lty="solid", fill=NA))
+grid.circle(r=.4, 
+            gp=gpar(col="green", lty="solid", fill=NA))
+grid.circle(.8, .7, r=unit(1, "mm"), gp=gpar(col="green", fill="green"))
+  ]]></rcode>
+
+  <h2><a name="groups">Groups and paths with pattern fills</a></h2>
+
+  <p>
+    R version 4.2.0 also introduced two new graphics features:
+    groups (<a href="#murrell-groups-2021"/>)
+    and stroked/filled paths (<a href="#murrell-paths-2021"/>).  
+    These present interesting
+    complications for pattern fills.
+  </p>
+
+  <h3>Resolving patterns on groups</h3>
+  <p>
+    A group consists of a "source" grob combined with a "destination"
+    grob, using a compositing operator.
+    For example, the following code draws a group, with a grey fill,
+    where the group consists of one rectangle
+    combined with another rectangle using the default
+    "over" operator (one rectangle is drawn on top of the other).
+  </p>
+  <rcode fig.width="2" fig.height="2"><![CDATA[
+r1 <- rectGrob(.1, .1, .5, .5, just=c("left", "bottom"))
+r2 <- rectGrob(.4, .4, .5, .5, just=c("left", "bottom"))
+grid.group(r2, "over", r1,
+           gp=gpar(fill="grey"))
+  ]]></rcode>
+  <p>
+    If we use a radial gradient fill on the group instead,
+    the gradient is resolved relative to a bounding box around
+    both the source and the destination.  In the example below,
+    the two rectangles are both being filled separately, just
+    with the same gradient fill.
+  </p>
+  <rcode fig.width="2" fig.height="2"><![CDATA[
+grid.group(r2, "over", r1,
+           gp=gpar(fill=radialGradient()))
+  ]]></rcode>
+  <p>
+    Where things get interesting is if we use a different 
+    compositing operator.  In the code below,
+    we use a "clear" operator, so the source erases the
+    destination where the two overlap (and the source is
+    not drawn).  However, the radial gradient is still
+    resolved relative to both source and destination,
+    so the destination is filled with a radial gradient relative
+    to a bounding box around both itself and the (invisible)
+    source.
+  </p>
+  <rcode fig.width="2" fig.height="2"><![CDATA[
+grid.group(r2, "clear", r1,
+           gp=gpar(fill=radialGradient()))
+  ]]></rcode>
+  <p>
+    Another interesting scenario occurs 
+    if we separate group definition with from group use.
+    If the group use occurs within a different viewport than
+    the group definition, a transformation is applied to the group.
+    If the resolution of a pattern requires determining the bounding
+    box for the group use, the bounding box is around the transformed
+    group.
+  </p>
+  <p>
+    The following code demonstrates this sort of scenario.
+    We have a grob, <code>r3</code>, that describes a
+    rectangle in the bottom left quadrant of the image.
+    We define a group called <code>"r"</code> based on that rectangle.
+    This definition occurs in the default viewport that is centred on
+    (.5, .5).
+    We then have another grob <code>user3</code> that uses the
+    group <code>"r"</code> in a viewport that is centred on (1, 1).
+    That use will translate the rectangle up to the top-right quadrant
+    of the image.
+    Now we define a gTree with two children: the grob <code>r3</code>,
+    a rectangle in the bottom-left quadrant;
+    and the grob <code>user3</code>, a rectangle 
+    in the top-right quadrant.  
+    The gTree has a radial gradient fill, which gets resolved relative
+    to the bounding box around the gTree, which
+    is the entire image.
+    The result is that the rectangle at bottom-left is filled with 
+    a radial gradient that was resolved relative to the entire image.
+    The rectangle at top-right has no fill because it is just a 
+    use of the group <code>"r"</code>, which was defined with no fill.
+  </p>
+  <rcode fig.width="2" fig.height="2"><![CDATA[
+r3 <- rectGrob(0, 0, .5, .5, just=c("left", "bottom"))
+grid.define(r3, name="r")
+user3 <- useGrob("r", vp=viewport(1, 1))
+gt <- gTree(children=gList(r3, user3),
+            gp=gpar(fill=radialGradient()))
+grid.draw(gt)
+  ]]></rcode> 
+  <p>
+    The situation is simpler if we just specify a 
+    pattern fill on a grob <em>within</em> the group.
+    In that case, the pattern is recorded normally as part 
+    of the group definition and the pattern
+    is transformed (on the device) when the group is used.
+  </p>
+
+  <p>
+    In order for the calculation of the bounding box of a group use
+    to work, the bounding box of the group has to be recorded
+    when the group is defined.  In cases where it is known
+    that the group will not be reused, this calculation can be 
+    turned off using the <code>coords</code> argument.
+  </p>
+
+  <h3>Resolving patterns on stroked and filled paths</h3>
+  <p>
+    When a fill pattern is specified for a stroked or filled path,
+    the bounding box for resolving the pattern is
+    based on all of the grobs that define the
+    path.  This is because a stroked or filled path is conceptually
+    just a single shape.
+    In the example below, we fill a path that is constructed from
+    two nested circles, using an "evenodd" rule so that the
+    inner circle generates a hole in the outer circle.  We then
+    fill the resulting "donut" with a radial gradient, which
+    is resolved relative to a bounding box around both circles.
+  </p>
+
+  <rcode fig.width="4" fig.height="2"><![CDATA[
+grid.fill(circleGrob(r=c(.2, .4)), rule="evenodd",
+          gp=gpar(fill=radialGradient()))
+  ]]></rcode>
+
+  <p>
+    A further corollary is that  <code>group=FALSE</code>
+    will have no effect on the resolution of a pattern fill
+    for a stroked or filled path.
+    For example the code below constructs a path from two 
+    distinct circles and then fills the path with a radial gradient
+    with <code>group=FALSE</code>.  The path is a single
+    shape so the radial gradient is resolved relative to a bounding box
+    around both of the circles.
+  </p>
+
+  
+  <rcode fig.width="4" fig.height="2"><![CDATA[
+grid.fillStroke(circleGrob(x=1:2/3, r=.3),
+                gp=gpar(fill=radialGradient(group=FALSE)))
+  ]]></rcode>
+
+
+  <h2><a name="discussion">Summary</a></h2>
+
+  <p>
+    From R version 4.2.0, we can resolve
+    pattern fills relative to individual shapes within a grob
+    <em>and</em> we can specify different pattern fills for 
+    different shapes within a grob.
+    This means that pattern fills can now be used just like
+    normal colour fills.
+    This includes using pattern fills on individual data symbols.
+  </p>
+
+
+  <h2><a name="requirements">Technical requirements</a></h2>
+  <p>
+    The examples and discussion in this report relate to 
+    R version 4.2.0.
+  </p>
+  <p>
+    The 'ggplot2' example that draws a points with gradients
+    in the legend requires 'gggrid' version 0.2-0 or higher.
+  </p>
+  <p>
+    This report was generated within a Docker container
+    (see <a href="#Resources">Resources</a> section below).
+  </p>
+
+  <h2><a name="Resources">Resources</a></h2>
+  <ul>
+    <li>
+      The <a href="vecpat.cml">raw source file</a> for this
+      report, a <a href="vecpat.xml">valid XML</a>
+      transformation of the source file, a <a
+      href="vecpat.Rhtml">'knitr' document</a> generated from
+      the XML file, 
+      two <a href="toc.R">R</a> <a href="bib.R">files</a> and
+      the <a href="vecpat.bib">bibtex file</a>
+      that are used to generate the table of contents and reference sections,
+      two <a href="common.xsl">XSL</a> <a
+      href="knitr.xsl">files</a> and an 
+      <a href="knit.R">R file</a> that are used to transform the XML to
+      the 'knitr' document, and a <a href="Makefile">Makefile</a> that
+      contains code for the other transformations and coordinates
+      everything.  
+      These materials are also available
+      on <a href="https://github.com/pmur002/vecpat-report/releases/tag/v1">github</a>.
+    </li>
+    <li>
+      This report was generated within a 
+      <a href="https://www.docker.com/">Docker</a> container.
+      The Docker command to build the report is included in the Makefile above.
+      The Docker image for the container is available from
+      <a href="https://hub.docker.com/r/pmur002/vecpat-report/">Docker Hub</a>;
+      alternatively, the image can be rebuilt from its 
+      <a href="Dockerfile">Dockerfile</a>.
+    </li>
+  </ul>
+
+  <h2>How to cite this report</h2>
+  <p>
+    Murrell, P. (2021). "Vectorised Pattern Fills in R Graphics" 
+    Technical Report 2021-??, Department of Statistics, The University of Auckland. 
+    Version 1.
+    [ <a href="how-to-cite.bib">bib</a> |
+      <a href="http://dx.doi.org/">DOI</a> | 
+      <a href="https://stattech.blogs.auckland.ac.nz/">http</a> ]
+  </p>
+
+  <h2><a name="references">References</a></h2>
+  <ul style="list-style-type: none">
+    <li>
+      <a name="R"/>
+    </li>
+    <li>
+      <a name="murrell-definitions-2020"/>
+    </li>
+    <li>
+      <a name="PDF"/>
+    </li>
+    <li>
+      <a name="cairo"/>
+    </li>
+    <li>
+      <a name="pkg:ragg"/>
+    </li>
+    <li>
+      <a name="pkg:svglite"/>
+    </li>
+    <li>
+      <a name="pkg:ggplot2"/>
+    </li>
+    <li>
+      <a name="pkg:gggrid"/>
+    </li>
+    <li>
+      <a name="murrell-groups-2021"/>
+    </li>
+    <li>
+      <a name="murrell-paths-2021"/>
+    </li>
+  </ul>
+
+  <hr/>
+  <p>
+    <a rel="license"
+    href="http://creativecommons.org/licenses/by/4.0/"><img class="CC"
+    alt="Creative Commons License" style="border-width:0"
+    src="https://i.creativecommons.org/l/by/4.0/88x31.png"/></a><br/><span
+    xmlns:dct="http://purl.org/dc/terms/"
+    property="dct:title">This document</span>
+    by <span xmlns:cc="http://creativecommons.org/ns#"
+    property="cc:attributionName">Paul
+    Murrell</span> is licensed under a <a rel="license"
+    href="http://creativecommons.org/licenses/by/4.0/">Creative
+    Commons Attribution 4.0 International License</a>.
+  </p>
+
+</body>
+</html>
