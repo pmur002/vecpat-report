@@ -606,7 +606,7 @@ grid.group(r2, "clear", r1,
   </rcode>
   <p>
     Another interesting scenario occurs 
-    if we separate group definition with from group use.
+    if we separate group definition from group use.
     If the group use occurs within a different viewport than
     the group definition, a transformation is applied to the group.
     If the resolution of a pattern requires determining the bounding
@@ -712,11 +712,12 @@ grid.fillStroke(circleGrob(x=1:2/3, r=.3),
 
   <h2><a name="requirements">Technical requirements</a></h2>
   <p>
-    The examples and discussion in this report relate to 
-    R version 4.2.0.
+    The examples and discussion in this report relate mostly to 
+    R version 4.2.0.  Some of the examples in 
+    <a href="#groups"/> rely on bug fixes that require R version 4.2.1.
   </p>
   <p>
-    The 'ggplot2' example that draws a points with gradients
+    The 'ggplot2' example that draws points with gradients
     in the legend requires 'gggrid' version 0.2-0 or higher.
   </p>
   <p>
@@ -757,12 +758,12 @@ grid.fillStroke(circleGrob(x=1:2/3, r=.3),
 
   <h2>How to cite this report</h2>
   <p>
-    Murrell, P. (2021). "Vectorised Pattern Fills in R Graphics" 
-    Technical Report 2021-??, Department of Statistics, The University of Auckland. 
+    Murrell, P. (2022). "Vectorised Pattern Fills in R Graphics" 
+    Technical Report 2022-01, Department of Statistics, The University of Auckland. 
     Version 1.
     [ <a href="how-to-cite.bib">bib</a> |
-      <a href="http://dx.doi.org/">DOI</a> | 
-      <a href="https://stattech.blogs.auckland.ac.nz/">http</a> ]
+      <a href="http://dx.doi.org/10.17608/k6.auckland.19945787">DOI</a> | 
+      <a href="https://stattech.blogs.auckland.ac.nz/2022/06/01/2022-01/">http</a> ]
   </p>
 
   <h2><a name="references">References</a></h2>
